@@ -7,12 +7,9 @@ import os
 import pprint
 from typing import Generator, List, Dict, Any
 
-key = "kAz72eY5anyqXf8pAdWLblK1xWhKZg4k"
+log = logging.getLogger(__name__)
 
 NYT_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json?"
-
-
-log = logging.getLogger(__name__)
 
 
 class NYTimesSource:
@@ -23,6 +20,9 @@ class NYTimesSource:
     def __init__(self, api_key, query):
         self.api_key = api_key
         self.query = query
+        self.inc_column = inc_column  # column for incremental updates
+        self.max_inc_value = max_inc_value  # Last known value
+        self.max_retries = max_retries
         self.schema = set()
 
     def connect(self, inc_column=None, max_inc_value=None):
@@ -35,26 +35,32 @@ class NYTimesSource:
         pass
 
     def _get_data(self, page=0):
-        extension = {"q": self.query, "api-key": self.api_key, "page": page}
-        # print(NYT_URL + extension)
-        response = requests.get(NYT_URL, params=extension)
+        retries = 0
+        max_retries = 5
+        params = {"q": self.query, "api-key": self.api_key, "page": page}
+        # print(NYT_URL, params) # check for working url
+        response = requests.get(NYT_URL, params=params)
         if response.status_code == 200:
-            # print(response.status_code)
-            # print(response.text)
+            # pprint.pprint(response.text) # raw response check (import pprint)
             return response.json()
+        elif retries < max_retries:
+            retries += 1
+            time.sleep(10)
+            pass
         else:
             log.error("Error fetching data: %s", response.text)
             return None
 
-    def _flatten_dict(self, d, parent_key="", sep="."):
+    def _flatten_dict(self, x, parent_key="", sep="."):
         items = []
         # loop through keys and values
-        for k, v in d.items():
-            # if nested, create new key with "." between k and v
+        for k, v in x.items():
+            # if nested dict, create new key with "." between k and v
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
-            if isinstance(v, dict):  # if value is dict, flatten (recursive)
+            if isinstance(v, dict):
+                # if value is dict, flatten (recursivly) and append to items.
                 items.extend(self._flatten_dict(v, new_key, sep).items())
-            else:  # else keep key and value as is
+            else:  # else keep key and value as is and append to items
                 items.append((new_key, v))
         # pprint.pprint(dict(items))
         return dict(items)
@@ -83,7 +89,7 @@ class NYTimesSource:
             if len(batch) > batch_size:
                 break
 
-                # TODO: implement - this dummy implementation returns one batch of data
+            # TODO: implement - this dummy implementation returns one batch of data
             # yield [
             #     {
             #         "headline.main": "The main headline",

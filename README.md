@@ -13,6 +13,9 @@ This Python project uses the New York Times Aricle Search API, returning batches
 ```bash
 git clone https://github.com/jstaylor-eng/Squirro_NYT
 
+# Change directory to /Squirro_NYT
+cd ./Squirro_NYT
+
 # Make a virtual environment
 python3 -m venv .venv
 
@@ -24,7 +27,7 @@ pip install -r requirements.txt
 
 ```
 
-3. In the root directory (where nyt_call.py is located) create a file called ".env" and open it. Add the following, where "my_api_key" is replaced with your API key copied from step 1:
+3. In the /Squirro_NYT directory create a file called ".env" and open it. Add the following, where "my_api_key" is replaced with your API key copied from step 1:
 API_KEY=my_api_key
 
 4. Change the value of "query" in in nyt_call.py if required, and run using:

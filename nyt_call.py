@@ -1,8 +1,10 @@
-# import argparse
 import logging
 import requests
 import time
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +115,7 @@ class NYTimesSource:
             for article in articles:
                 flattened_article = self._flatten_dict(article)
                 article_value = None
-                # filter already loaded articles
+                # skip already loaded articles
                 if self.inc_column and self.max_inc_value:
                     article_value = flattened_article.get(self.inc_column)
                     if article_value and article_value <= self.max_inc_value:

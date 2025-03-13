@@ -4,8 +4,6 @@ import requests
 import time
 import os
 
-# import pprint
-
 log = logging.getLogger(__name__)
 
 NYT_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json?"
@@ -25,6 +23,7 @@ class NYTimesSource:
         self.inc_column = inc_column
         self.max_inc_value = max_inc_value
         self.schema = set()
+        self.session = requests.Session()
 
     def connect(self, inc_column=None, max_inc_value=None):
         """Connect to the source"""
@@ -33,9 +32,12 @@ class NYTimesSource:
 
     def disconnect(self):
         """Disconnect from the source."""
-        pass
+        log.info("Disconnected from source")
+        self.session.close()
+        self.session = None
 
-    def _get_data(self, page=0):
+    def _fetch_data(self, page=0):
+        """Internal use function to fetch data via NYT API, and manage retries."""
         attempt = 0
         params = {
             "q": self.query,
@@ -46,13 +48,17 @@ class NYTimesSource:
 
         while attempt < self.max_retries:
             try:
-                # log.info("Attempting url: ", NYT_URL, params)  # check for working url
-                response = requests.get(NYT_URL, params=params)
+                response = self.session.get(NYT_URL, params=params)
                 if response.status_code == 200:
-                    # pprint.pprint(response.text) # raw response check (import pprint)
                     return response.json()
+                elif response.status_code == 429:
+                    log.warning("Rate limit exceeded, waiting 20 seconds before retry")
+                    time.sleep(20)
+                    attempt += 1
+                    continue
                 else:
                     log.error("Error fetching data: %s", response.text)
+                    return None
             except requests.RequestException as e:
                 log.error("Request failed (attempt %d): %s", attempt + 1, str(e))
 
@@ -63,13 +69,11 @@ class NYTimesSource:
         return None
 
     def _flatten_dict(self, d, parent_key="", sep="."):
+        """Internal use function to flatten dictionaries within NYT API response"""
         items = []
-        # loop through keys and values
         for k, v in d.items():
-            # if nested dict, create new key with "." between k and v
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
             if isinstance(v, dict):
-                # if value is dict, flatten (recursivly) and append to items.
                 items.extend(self._flatten_dict(v, new_key, sep).items())
             # Unsure if wanting to completely flatten everything, or just dictionary levels.
             # If so, uncomment below block to enablbe complete flattening of lists and nested dictionaries.
@@ -81,9 +85,8 @@ class NYTimesSource:
             #             )
             #         else:
             #             items.append((f"{new_key}[{idx}]", item))
-            else:  # else append key and value to items list
+            else:
                 items.append((new_key, v))
-        # pprint.pprint(dict(items)) # prints flattend dictonary to console.
         return dict(items)
 
     def getDataBatch(self, batch_size):
@@ -93,17 +96,17 @@ class NYTimesSource:
         """
         page = 0
         while True:
-            data = self._get_data(page)
+            data = self._fetch_data(page)
             if not data or "response" not in data or "docs" not in data["response"]:
+                log.debug("No more data to fetch or error in response.")
                 break
 
             articles = data["response"]["docs"]
             if not articles:
+                log.debug("No articles found in the response.")
                 break
 
-            batch = (
-                []
-            )  # originally [self._flatten_dict(article) for article in articles]
+            batch = []
             for article in articles:
                 flattened_article = self._flatten_dict(article)
                 article_value = None
@@ -112,9 +115,9 @@ class NYTimesSource:
                     article_value = flattened_article.get(self.inc_column)
                     if article_value and article_value <= self.max_inc_value:
                         continue
-                # append flattend article to batch
+
                 batch.append(flattened_article)
-                # set the maximum incriment to highest of existing max or current article
+
                 if self.inc_column and article_value:
                     self.max_inc_value = max(self.max_inc_value, article_value)
 
@@ -127,18 +130,10 @@ class NYTimesSource:
             page += 1
             time.sleep(1)
             if len(batch) < batch_size:
+                log.debug("Fetched a smaller batch than requested, ending fetch.")
                 break
 
-            # TODO: implement - this dummy implementation returns one batch of data
-            # yield [
-            #     {
-            #         "headline.main": "The main headline",
-            #         "_id": "1234",
-            #     }
-            # ]
-
     def getSchema(self):
-        # print(sorted(self.schema))
         return self.schema
 
 
@@ -155,15 +150,14 @@ if __name__ == "__main__":
     # a simple way to create an object holding attributes.
     # source.args = argparse.Namespace(**config)
 
-    for idx, batch in enumerate(source.getDataBatch(5)):
+    for idx, batch in enumerate(source.getDataBatch(10)):
         print(f"Batch {idx + 1} containing {len(batch)} items")
         for item in batch:
             print(
                 f" - {item.get('_id', 'N/A')} - {item.get('headline.main', 'No Headline')}"
             )
-        # pprint.pprint(batch)
+        # print(batch)
 
-        # print(f"Schema after batch {idx + 1}:")
-        # print(source.getSchema())
+        # print(f"Schema after batch {idx + 1}: ", source.getSchema())
 
     source.disconnect()

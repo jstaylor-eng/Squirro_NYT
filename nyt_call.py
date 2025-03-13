@@ -51,6 +51,9 @@ class NYTimesSource:
                 response = self.session.get(NYT_URL, params=params)
                 if response.status_code == 200:
                     return response.json()
+                elif response.status_code == 401:
+                    log.warning("Invalid API key")
+                    break
                 elif response.status_code == 429:
                     log.warning("Rate limit exceeded, waiting 20 seconds before retry")
                     time.sleep(20)
@@ -65,7 +68,7 @@ class NYTimesSource:
             attempt += 1
             time.sleep(2**attempt)
 
-        log.error("Max retries reached, request skipped")
+        log.error("Max retries reached or API key error, request skipped")
         return None
 
     def _flatten_dict(self, d, parent_key="", sep="."):

@@ -94,12 +94,16 @@ class NYTimesSource:
                 items.append((new_key, v))
         return dict(items)
 
+    def getSchema(self):
+        return self.schema
+
     def getDataBatch(self, batch_size):
         """
-        Generator - Get data from source on batches.
+        Generator - Get data from source in batches.
         :returns: One list for each batch. Each of those is a list of dictionaries with the defined rows.
         """
         page = 0
+        batch = []
         while True:
             data = self._fetch_data(page)
             if not data or "response" not in data or "docs" not in data["response"]:
@@ -111,11 +115,10 @@ class NYTimesSource:
                 log.debug("No articles found in the response.")
                 break
 
-            batch = []
             for article in articles:
                 flattened_article = self._flatten_dict(article)
                 article_value = None
-                # skip already loaded articles
+                # Skip already loaded articles
                 if self.inc_column and self.max_inc_value:
                     article_value = flattened_article.get(self.inc_column)
                     if article_value and article_value <= self.max_inc_value:
@@ -127,25 +130,20 @@ class NYTimesSource:
                     self.max_inc_value = max(self.max_inc_value, article_value)
 
                 if len(batch) >= batch_size:
-                    break
-
-            self.schema.update(key for article in batch for key in article.keys())
-            yield batch
+                    yield batch
+                    batch = []
 
             page += 1
             time.sleep(1)
-            if len(batch) < batch_size:
-                log.debug("Fetched a smaller batch than requested, ending fetch.")
-                break
 
-    def getSchema(self):
-        return self.schema
+        if batch:  # Yield any remaining articles in the batch
+            yield batch
 
 
 if __name__ == "__main__":
     config = {
         "api_key": os.getenv("API_KEY"),
-        "query": "Silicon Valley",
+        "query": "bugti",
         "inc_column": "pub_date",
         "max_inc_value": None,
     }
@@ -155,7 +153,7 @@ if __name__ == "__main__":
     # a simple way to create an object holding attributes.
     # source.args = argparse.Namespace(**config)
 
-    for idx, batch in enumerate(source.getDataBatch(10)):
+    for idx, batch in enumerate(source.getDataBatch(12)):
         print(f"Batch {idx + 1} containing {len(batch)} items")
         for item in batch:
             print(

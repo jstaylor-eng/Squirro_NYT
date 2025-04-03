@@ -130,6 +130,9 @@ class NYTimesSource:
                     self.max_inc_value = max(self.max_inc_value, article_value)
 
                 if len(batch) >= batch_size:
+                    self.schema.update(
+                        key for article in batch for key in article.keys()
+                    )
                     yield batch
                     batch = []
 
@@ -137,6 +140,7 @@ class NYTimesSource:
             time.sleep(1)
 
         if batch:  # Yield any remaining articles in the batch
+            self.schema.update(key for article in batch for key in article.keys())
             yield batch
 
 
@@ -161,6 +165,6 @@ if __name__ == "__main__":
             )
         # print(batch)
 
-        # print(f"Schema after batch {idx + 1}: ", source.getSchema())
+        print(f"Schema after batch {idx + 1}: ", source.getSchema())
 
     source.disconnect()
